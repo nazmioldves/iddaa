@@ -1,0 +1,445 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import logging
+import os
+import json
+import pickle
+
+# Log ayarları
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Kazınacak URL'ler
+url_prediction_map = {
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-ev-sahibi-kazanir": "ms1",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-berabere-biter": "msx",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-rakip-kazanir": "ms2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-2-5-alt-biter": "2.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-2-5-ust-biter": "2.5 üst",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-1-5-alt-biter": "1.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-1-5-ust-biter": "1.5 üst",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-3-5-alt-biter": "3.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-3-5-ust-biter": "3.5 üst",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-ev-sahibi-kazanir": "iy1",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-berabere-biter": "iyx",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-rakip-takim-kazanir": "iy2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-ev-sahibi-kazanir-ve-mac-berabere-biter": "çş 1/x",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-ev-sahibi-kazanir-ve-deplasman-takimi-kazanir": "çş 1/2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-berabere-biter-ve-deplasman-takimi-kazanir": "çş x/2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/toplam-gol-0-1-analizi": "TG 01",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/toplam-gol-2-3-analizi": "TG 23",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/toplam-gol-4-5-analizi": "TG 45",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/toplam-gol-6-analizi": "TG +6",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/kg-var-analizi": "KG VAR",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/kg-yok-analizi": "KG YOK",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-1-1-tahmini": "İY/MS 1/1",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-1-x-tahmini": "İY/MS 1/X",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-1-2-tahmini": "İY/MS 1/2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-x-1-tahmini": "İY/MS X/1",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-x-x-tahmini": "İY/MS X/X",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-x-2-tahmini": "İY/MS X/2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-2-1-tahmini": "İY/MS 2/1",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-2-x-tahmini": "İY/MS 2/X",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-mac-sonucu-2-2-tahmini": "İY/MS 2/2",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-tek-olur": "TEK",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-cift-olur": "ÇİFT",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-alt-1-5": "İY alt 1.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-ust-1-5": "İY üst 1.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-alt-0-5": "İY alt 0.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-ust-0-5": "İY üst 0.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-alt-2-5": "İY alt 2.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/ilk-yari-ust-2-5": "İY üst 2.5",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-0-5-alt": "MS 0.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-0-5-ust": "MS 0.5 üst",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-4-5-alt": "MS 4.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-4-5-ust": "MS 4.5 üst",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-5-5-alt": "MS 5.5 alt",
+    "https://www.iddaaorantahmin.com/iddaa-oran-analiz/mac-sonucu-5-5-ust": "MS 5.5 üst"
+}
+
+# Giriş bilgileri
+LOGIN_URL = "https://www.iddaaorantahmin.com/account/login"
+USERNAME = os.getenv("EMAIL", "nazmidoganpau@gmail.com")
+PASSWORD = os.getenv("PASSWORD", "Nazmi1925")
+COOKIE_FILE = "cookies.pkl"
+SESSION_STORAGE_FILE = "session_storage.pkl"
+
+# Tarayıcıyı global olarak başlat
+driver = None
+
+def initialize_driver():
+    """Tarayıcıyı başlat."""
+    global driver
+    try:
+        if driver is not None:
+            driver.quit()
+            logging.info("Önceki tarayıcı örneği kapatıldı")
+    except:
+        pass
+
+    options = webdriver.ChromeOptions()
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    try:
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        logging.info("Yeni tarayıcı örneği başlatıldı")
+        return driver
+    except Exception as e:
+        logging.error(f"Tarayıcı başlatılamadı: {e}")
+        return None
+
+def load_cookies():
+    """Çerezleri dosyadan yükle."""
+    if os.path.exists(COOKIE_FILE):
+        driver.get("https://www.iddaaorantahmin.com")
+        with open(COOKIE_FILE, 'rb') as f:
+            cookies = pickle.load(f)
+            for cookie in cookies:
+                try:
+                    driver.add_cookie(cookie)
+                except Exception as e:
+                    logging.warning(f"Çerez eklenemedi: {e}")
+        logging.info("Çerezler dosyadan yüklendi")
+        driver.get("https://www.iddaaorantahmin.com/account")
+        time.sleep(3)
+        try:
+            WebDriverWait(driver, 10).until(EC.url_contains("/account"))
+            logging.info("Oturum çerezlerden geri yüklendi")
+            return True
+        except:
+            logging.info("Oturum geçerli değil, giriş işlemine devam ediliyor")
+            return False
+    return False
+
+def save_cookies():
+    """Çerezleri dosyaya kaydet."""
+    try:
+        with open(COOKIE_FILE, 'wb') as f:
+            pickle.dump(driver.get_cookies(), f)
+        logging.info(f"Çerezler {COOKIE_FILE} dosyasına kaydedildi")
+    except Exception as e:
+        logging.warning(f"Çerezler kaydedilemedi: {e}")
+
+def load_session_storage():
+    """Oturum depolama verilerini dosyadan yükle."""
+    if os.path.exists(SESSION_STORAGE_FILE):
+        try:
+            with open(SESSION_STORAGE_FILE, 'rb') as f:
+                session_storage = pickle.load(f)
+            for key, value in session_storage.items():
+                driver.execute_script(f"window.sessionStorage.setItem('{key}', '{value}');")
+            logging.info("Oturum depolama verileri yüklendi")
+            return True
+        except Exception as e:
+            logging.warning(f"Oturum depolama yüklenemedi: {e}")
+            return False
+    return False
+
+def save_session_storage():
+    """Oturum depolama verilerini dosyaya kaydet."""
+    try:
+        session_storage = driver.execute_script("return window.sessionStorage;")
+        with open(SESSION_STORAGE_FILE, 'wb') as f:
+            pickle.dump(session_storage, f)
+        logging.info(f"Oturum depolama {SESSION_STORAGE_FILE} dosyasına kaydedildi")
+    except Exception as e:
+        logging.warning(f"Oturum depolama kaydedilemedi: {e}")
+
+def get_session_storage():
+    """Oturum depolama verilerini al."""
+    try:
+        session_storage = driver.execute_script("return window.sessionStorage;")
+        logging.info(f"Oturum depolama: {session_storage}")
+        return session_storage
+    except Exception as e:
+        logging.warning(f"Oturum depolama alınamadı: {e}")
+        return {}
+
+def login():
+    """Siteye giriş yap."""
+    global driver
+    if driver is None:
+        driver = initialize_driver()
+        if driver is None:
+            logging.error("Tarayıcı başlatılamadı, giriş yapılamıyor")
+            return False
+
+    # Önce çerezleri ve oturum depolamayı yüklemeyi dene
+    if load_cookies() and load_session_storage():
+        driver.get("https://www.iddaaorantahmin.com/account")
+        time.sleep(3)
+        try:
+            WebDriverWait(driver, 10).until(EC.url_contains("/account"))
+            logging.info("Oturum çerezler ve oturum depolamadan geri yüklendi")
+            return True
+        except:
+            logging.info("Oturum geçerli değil, giriş işlemine devam ediliyor")
+
+    logging.info("Giriş yapılıyor...")
+    driver.get(LOGIN_URL)
+
+    try:
+        # Sayfanın yüklenmesini bekle
+        time.sleep(7)
+        logging.info("E-posta ve şifre alanları aranıyor...")
+        
+        # E-posta alanı
+        email_field = WebDriverWait(driver, 60).until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+        
+        # Şifre alanı
+        password_field = WebDriverWait(driver, 60).until(
+            EC.presence_of_element_located((By.ID, "password"))
+        )
+        
+        logging.info("Kimlik bilgileri giriliyor...")
+        email_field.clear()
+        password_field.clear()
+        email_field.send_keys(USERNAME)
+        password_field.send_keys(PASSWORD)
+        
+        # Girişten önce çerezleri kaydet
+        cookies = driver.get_cookies()
+        logging.info(f"Girişten önce çerezler: {cookies}")
+        
+        # CAPTCHA için bekle
+        logging.info("CAPTCHA için 40 saniye bekleniyor...")
+        driver.save_screenshot("login_before.png")
+        time.sleep(40)
+        
+        logging.info("Giriş başlatılıyor...")
+        try:
+            driver.execute_script("loginForm('login_form');")
+        except Exception as e:
+            logging.warning(f"loginForm('login_form') başarısız: {e}, düğmeye tıklama deneniyor...")
+            login_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[@class='btn btn-primary btn-login']"))
+            )
+            driver.execute_script("arguments[0].click();", login_button)
+        
+        logging.info("Yönlendirme bekleniyor...")
+        WebDriverWait(driver, 90).until(
+            EC.url_contains("/account")
+        )
+        logging.info("Giriş başarılı")
+        
+        # Girişten sonra çerezleri ve oturum depolamayı kaydet
+        cookies = driver.get_cookies()
+        logging.info(f"Girişten sonra çerezler: {cookies}")
+        save_cookies()
+        save_session_storage()
+        
+        # Oturumu yenile
+        driver.get("https://www.iddaaorantahmin.com/account")
+        time.sleep(3)
+        cookies = driver.get_cookies()
+        logging.info(f"Hesap sayfasından sonra çerezler: {cookies}")
+        save_cookies()
+        save_session_storage()
+        return True
+    except Exception as e:
+        logging.error(f"Giriş başarısız: {e}")
+        try:
+            driver.save_screenshot("login_error.png")
+            logging.info("Ekran görüntüsü 'login_error.png' olarak kaydedildi")
+        except:
+            logging.warning("Giriş hatası sırasında ekran görüntüsü kaydedilemedi")
+        return False
+
+def scrape_page(url, bet_type, attempt=1):
+    """Verilen URL'den maç verilerini kazı."""
+    global driver
+    if driver is None:
+        driver = initialize_driver()
+        if driver is None:
+            logging.error("Tarayıcı başlatılamadı, kazıma yapılamıyor")
+            return []
+
+    logging.info(f"{url} adresinden {bet_type} için kazıma yapılıyor (Deneme {attempt}/3)")
+    try:
+        driver.get(url)
+        time.sleep(7)
+        
+        # Oturum hatasını kontrol et
+        try:
+            error_message = driver.find_element(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'misafir') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'üye girişi') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'giriş yap') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'limit')]")
+            logging.error(f"Oturum hatası: {error_message.text}")
+            try:
+                driver.save_screenshot(f"scrape_error_{bet_type.replace('/', '_')}_session.png")
+                with open(f"page_source_{bet_type.replace('/', '_')}.html", 'w', encoding='utf-8') as f:
+                    f.write(driver.page_source)
+                logging.info(f"Sayfa kaynağı 'page_source_{bet_type.replace('/', '_')}.html' olarak kaydedildi")
+            except:
+                logging.warning("Oturum hatası sırasında ekran görüntüsü veya sayfa kaynağı kaydedilemedi")
+            
+            # Tarayıcıyı yeniden başlat ve aynı URL'den tekrar dene
+            if attempt < 3:
+                logging.info(f"Oturum hatası nedeniyle tarayıcı yeniden başlatılıyor (Deneme {attempt}/3)...")
+                initialize_driver()
+                if login():
+                    return scrape_page(url, bet_type, attempt + 1)
+            return []
+        except:
+            logging.info("Oturum hatası yok, veri kazımaya devam ediliyor...")
+        
+        # Tablo yüklenmesini bekle
+        try:
+            WebDriverWait(driver, 120).until(
+                EC.presence_of_element_located((By.ID, "DataTables_Table_0"))
+            )
+            WebDriverWait(driver, 120).until(
+                EC.presence_of_element_located((By.XPATH, "//table[@id='DataTables_Table_0']//tbody//tr"))
+            )
+            time.sleep(15)
+        except Exception as e:
+            logging.error(f"Tablo yüklenemedi: {e}")
+            try:
+                driver.save_screenshot(f"scrape_error_{bet_type.replace('/', '_')}.png")
+                with open(f"page_source_{bet_type.replace('/', '_')}.html", 'w', encoding='utf-8') as f:
+                    f.write(driver.page_source)
+                logging.info(f"Sayfa kaynağı 'page_source_{bet_type.replace('/', '_')}.html' olarak kaydedildi")
+            except:
+                logging.warning("Tablo yükleme hatası sırasında ekran görüntüsü veya sayfa kaynağı kaydedilemedi")
+            return []
+        
+        # Tablo verilerini kazı
+        logging.info(f"{bet_type} için tablo verileri kazınıyor...")
+        try:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2)
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            table = soup.find('table', {'id': 'DataTables_Table_0'})
+            
+            if not table:
+                logging.warning(f"{bet_type} için tablo bulunamadı")
+                try:
+                    driver.save_screenshot(f"scrape_error_{bet_type.replace('/', '_')}.png")
+                    with open(f"page_source_{bet_type.replace('/', '_')}.html", 'w', encoding='utf-8') as f:
+                        f.write(driver.page_source)
+                    logging.info(f"Sayfa kaynağı 'page_source_{bet_type.replace('/', '_')}.html' olarak kaydedildi")
+                except:
+                    logging.warning("Tablo kazıma hatası sırasında ekran görüntüsü veya sayfa kaynağı kaydedilemedi")
+                return []
+            
+            rows = table.find('tbody').find_all('tr')
+            matches = []
+            
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) >= 5:
+                    date_time = cells[0].get_text(strip=True)
+                    league = cells[1].get_text(strip=True)
+                    teams = cells[2].get_text(strip=True)
+                    percentage = cells[3].get_text(strip=True).replace('%', '')
+                    odd = cells[4].get_text(strip=True)
+                    
+                    date_time_parts = date_time.split('\n')
+                    date = date_time_parts[0].strip() if date_time_parts else ''
+                    time_str = date_time_parts[1].strip() if len(date_time_parts) > 1 else ''
+                    
+                    match_data = {
+                        'date': date,
+                        'time': time_str,
+                        'league': league,
+                        'teams': teams,
+                        'percentage': percentage,
+                        'odd': odd,
+                        'bet_type': bet_type
+                    }
+                    matches.append(match_data)
+            
+            logging.info(f"{bet_type} için {len(matches)} maç kazındı")
+            return matches
+        except Exception as e:
+            logging.error(f"{url} kazınırken hata: {e}")
+            try:
+                driver.save_screenshot(f"scrape_error_{bet_type.replace('/', '_')}.png")
+                with open(f"page_source_{bet_type.replace('/', '_')}.html", 'w', encoding='utf-8') as f:
+                    f.write(driver.page_source)
+                logging.info(f"Sayfa kaynağı 'page_source_{bet_type.replace('/', '_')}.html' olarak kaydedildi")
+            except:
+                logging.warning("Kazıma hatası sırasında ekran görüntüsü veya sayfa kaynağı kaydedilemedi")
+            return []
+    except Exception as e:
+        logging.error(f"{url} işlenirken hata: {e}")
+        if "invalid session id" in str(e).lower():
+            logging.info("Tarayıcı kapatıldı, yeniden başlatılıyor...")
+            initialize_driver()
+            if login():
+                return scrape_page(url, bet_type, attempt + 1)
+        try:
+            driver.save_screenshot(f"scrape_error_{bet_type.replace('/', '_')}.png")
+        except:
+            logging.warning("İşleme hatası sırasında ekran görüntüsü kaydedilemedi")
+        return []
+
+def save_to_file(matches, filename="iddaa_verileri.txt"):
+    """Kazınan verileri metin dosyasına kaydet."""
+    if matches:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("Tarih\tSaat\tLig\tMaç\tYüzde\tTahmin\tOran\n")
+            for match in matches:
+                line = (f"{match['date']}\t{match['time']}\t{match['league']}\t"
+                        f"{match['teams']}\t%{match['percentage']}\t{match['bet_type']}\t{match['odd']}\n")
+                f.write(line)
+        logging.info(f"Veriler {filename} dosyasına kaydedildi")
+    else:
+        logging.warning(f"{filename} dosyasına kaydedilecek veri yok")
+
+def main():
+    global driver
+    try:
+        # Tarayıcıyı başlat
+        driver = initialize_driver()
+        if driver is None:
+            logging.error("İlk tarayıcı başlatma başarısız, işlem durduruluyor...")
+            return
+
+        # İlk giriş
+        if not login():
+            logging.error("İlk giriş başarısız, işlem durduruluyor...")
+            return
+        
+        all_matches = []
+        url_list = list(url_prediction_map.items())
+        
+        for index, (url, bet_type) in enumerate(url_list):
+            matches = scrape_page(url, bet_type)
+            all_matches.extend(matches)
+            time.sleep(10)
+        
+        # Tüm veriler toplandıktan sonra kaydet
+        if all_matches:
+            save_to_file(all_matches)
+        else:
+            logging.warning("Hiç veri kazınmadı")
+
+    except Exception as e:
+        logging.error(f"Genel hata: {e}")
+        try:
+            if driver is not None:
+                driver.save_screenshot("general_error.png")
+        except:
+            logging.warning("Genel hata sırasında ekran görüntüsü kaydedilemedi")
+
+    finally:
+        try:
+            if driver is not None:
+                driver.quit()
+                driver = None
+                logging.info("Tarayıcı kapatıldı")
+        except:
+            logging.info("Tarayıcı zaten kapatılmış")
+
+if __name__ == "__main__":
+    main()
